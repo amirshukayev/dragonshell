@@ -196,8 +196,16 @@ int run(std::vector<std::string> tokens, int fd[2], bool change_write, bool chan
             close(fd[1]);
         if (change_read)
             close(fd[0]);
-        int status;
-        while (should_wait && wait(&status) != pid) {};
+
+        if (!should_wait) return 0;
+        int *status = (int *) malloc(sizeof(int));
+        while (1) {
+            int terminated_pid = wait(status);
+            std::cout << "this pid: " << terminated_pid << " just got terminated yeeea, the other pid is: " << pid << std::endl;
+            if (terminated_pid == pid) 
+                break;
+        }
+        free(status);
     }
     return 0;
 }
