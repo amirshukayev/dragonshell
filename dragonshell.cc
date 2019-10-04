@@ -24,11 +24,9 @@ std::string trim(const std::string &s)
     std::string::const_iterator it = s.begin();
     while (it != s.end() && isspace(*it))
         it++;
-
     std::string::const_reverse_iterator rit = s.rbegin();
     while (rit.base() != it && isspace(*rit))
         rit++;
-
     return std::string(it, rit.base());
 }
 
@@ -57,26 +55,9 @@ std::vector<std::string> tokenize(const std::string &str, const char *delim) {
 	return tokens;
 }
 
-char *strConvert(std::string str) {
-    size_t len = str.length();
-    char *buf = new char[len + 1];
-    memcpy(buf, str.data(), len);
-    buf[len] = '\0';
-    return buf;
-}
-
-char **strVecConvert(std::vector<std::string> strings) {
-    std::vector<char*> cstrings;   
-    cstrings.reserve(strings.size() - 1);
-
-    for (unsigned int i = 0; i < strings.size(); i++) {
-        cstrings.push_back(&strings[i][0]);
-    }
-    cstrings.push_back(NULL);
-
-    return cstrings.data();
-}
-
+/**
+ * splits vector into vector of two vectors where each side is each side of the token token
+ */
 std::vector<std::vector<std::string> > split_tokens_on_token(std::vector<std::string> tokens, std::string token) {
     std::vector<std::string> left_args = std::vector<std::string>();
     std::vector<std::string> right_args = std::vector<std::string>();
@@ -110,16 +91,17 @@ std::string get_path(std::string partial_path) {
             tmp_path = path_var + "/" + partial_path;
         }
         
-        if (access(strConvert(tmp_path), F_OK) == 0) {
+        size_t len = tmp_path.length();
+        char *buf = new char[len + 1];
+        memcpy(buf, tmp_path.data(), len);
+        buf[len] = '\0';
+
+        if (access(buf, F_OK) == 0) {
             return tmp_path;
         }
+        delete[] buf;
     }
     return "";
-}
-
-int errorCommand(std::vector<std::string> tokens, std::string error_msg) {
-    std::cout << error_msg << std::endl;
-    return -1;
 }
 
 int cd(std::vector<std::string> tokens) {
@@ -136,10 +118,9 @@ int cd(std::vector<std::string> tokens) {
 
 std::string get_pwd_string() {
     char the_path[2048];
-
     getcwd(the_path, 2048-1);
+    
     strcat(the_path, "/");
-
     return std::string(the_path);
 }
 
@@ -203,7 +184,16 @@ int run(std::vector<std::string> tokens, int fd[2], bool change_write, bool chan
             dup2(fd[0], STDIN_FILENO);
         }
         extern char **environ;
-        execve(program_path.c_str(), strVecConvert(tokens), environ);
+
+        std::vector<char*> cstrings;   
+        cstrings.reserve(tokens.size() - 1);
+
+        for (unsigned int i = 0; i < tokens.size(); i++) {
+            cstrings.push_back(&tokens[i][0]);
+        }
+        cstrings.push_back(NULL);
+
+        execve(program_path.c_str(), (char**)cstrings.data(), environ);
     } else {
         if (change_write) 
             close(fd[1]);
@@ -244,7 +234,18 @@ int run_redirect_to_file(std::vector<std::string> tokens, int fd[2], std::string
     } else if (pid == 0) {
         close(fd[0]);
         dup2(fd[1], STDOUT_FILENO);
-        return execv(program_path.c_str(), strVecConvert(tokens));
+
+        std::vector<char*> cstrings;   
+        cstrings.reserve(tokens.size() - 1);
+
+        for (unsigned int i = 0; i < tokens.size(); i++) {
+            cstrings.push_back(&tokens[i][0]);
+        }
+        cstrings.push_back(NULL);
+
+        extern char **environ;
+
+        return execve(program_path.c_str(), (char**)cstrings.data(), environ);
     } else {
         close(fd[1]);
         dup(fd[0]);
@@ -268,9 +269,11 @@ int run_redirect_to_file(std::vector<std::string> tokens, int fd[2], std::string
 }
 
 int ds_exit() {
-    std::cout << std::endl << "DragonShell: Exiting..." << std::endl;
+    std::cout << std::endl << "dragonshell: Exiting..." << std::endl;
     for (unsigned int i = 0; i < child_processes.size(); i++) {
-        kill(child_processes[i], SIGKILL);
+        int pid = child_processes[i];
+        kill(pid, SIGKILL);
+        waitpid(pid, NULL, 0);
     }
     _exit(0);
 }
@@ -349,6 +352,7 @@ int route(std::vector<std::string> tokens)  {
     // main routing
     if (tokens.size() == 1 && trim(tokens[0]) == "exit") {
         ds_exit();
+        _exit(0); // just to be sure
         return 0;
     } else if (is_background_task(tokens)) {
         return route_background_task(tokens);
@@ -374,8 +378,10 @@ void start() {
     while (true) {
 		std::cout << "DragonShell > ";
 		std::string input;
-		if (!std::getline(std::cin, input))
+		if (!std::getline(std::cin, input)) {
             ds_exit();
+            _exit(0); // for safety
+        }
 
         std::vector<std::string> commands = tokenize(input, ";");
         for (std::vector<std::string>::iterator command = commands.begin(); command != commands.end(); command++) {
@@ -390,13 +396,20 @@ void start() {
 
 void signal_callback_handler(int signum) {
     // we don't gotta do nothing (basically SIG_IGN)
+    for (unsigned int i = 0; i < child_processes.size(); i++) {
+        int pid = child_processes[i];
+        kill(pid, SIGINT);
+        waitpid(pid, NULL, 0);
+    }
+    child_processes.clear();
+    std::cout << std::endl;
 }
 
 void init_signals() {
-    sa.sa_flags = 0;
+    sa.sa_flags = SA_RESTART;
     sigemptyset(&sa.sa_mask);
 
-    sa.sa_handler = SIG_IGN;
+    sa.sa_handler = signal_callback_handler;
     sigaction(SIGTSTP, &sa, NULL);
     sigaction(SIGINT, &sa, NULL);
 }
