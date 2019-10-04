@@ -17,8 +17,6 @@ const std::string A2PATH_USAGE_MSG = "usage: a2path <path>";
 std::vector<std::string> path_vars;
 std::vector<int> child_processes;
 
-#define perror std::perror
-
 struct sigaction sa;
 
 std::string trim(const std::string &s)
@@ -71,7 +69,7 @@ char **strVecConvert(std::vector<std::string> strings) {
     std::vector<char*> cstrings;   
     cstrings.reserve(strings.size() - 1);
 
-    for (int i = 0; i < strings.size(); i++) {
+    for (unsigned int i = 0; i < strings.size(); i++) {
         cstrings.push_back(&strings[i][0]);
     }
     cstrings.push_back(NULL);
@@ -89,7 +87,7 @@ std::vector<std::vector<std::string> > split_tokens_on_token(std::vector<std::st
         i++;
     }
     i++;
-    for (int j = i; j < tokens.size(); j++) {
+    for (unsigned int j = i; j < tokens.size(); j++) {
         right_args.push_back(tokens[j]);
     }
 
@@ -104,7 +102,7 @@ std::vector<std::vector<std::string> > split_tokens_on_token(std::vector<std::st
  * returns null if there is no file in any path
  */
 std::string get_path(std::string partial_path) {
-    for (int i = 0; i < path_vars.size(); i++) {
+    for (unsigned int i = 0; i < path_vars.size(); i++) {
         std::string path_var = path_vars[i];
         std::string tmp_path = path_var + partial_path;
 
@@ -167,7 +165,7 @@ int a2path(std::vector<std::string> tokens) {
         } else if (trim(path_tokens[0]) != "$PATH") {
             cout << "dragonshell: " << path_tokens[0] << " is not the path" << endl;
         } else {
-            for (int i = 1; i < path_tokens.size(); i++) {
+            for (unsigned int i = 1; i < path_tokens.size(); i++) {
                 path_vars.push_back(path_tokens[i]);
             }
         }
@@ -177,7 +175,7 @@ int a2path(std::vector<std::string> tokens) {
 
 int print_path() {
     // start at 1 because first element of path_vars is empty string
-    for (int i = 1; i < path_vars.size()-1; i++) {
+    for (unsigned int i = 1; i < path_vars.size()-1; i++) {
         std::cout << path_vars[i] << ":";
     }
     std::cout << path_vars[path_vars.size()-1] << std::endl;
@@ -271,7 +269,7 @@ int run_redirect_to_file(std::vector<std::string> tokens, int fd[2], std::string
 
 int ds_exit() {
     std::cout << std::endl << "DragonShell: Exiting..." << std::endl;
-    for (int i = 0; i < child_processes.size(); i++) {
+    for (unsigned int i = 0; i < child_processes.size(); i++) {
         kill(child_processes[i], SIGKILL);
     }
     _exit(0);
@@ -285,7 +283,7 @@ bool is_background_task(std::vector<std::string> tokens) {
 }
 
 bool is_routable(std::vector<std::string> tokens) {
-    for (int i = 0; i < tokens.size(); i++) {
+    for (unsigned int i = 0; i < tokens.size(); i++) {
         if (tokens[i] == ">")
             return true;
     }
@@ -293,7 +291,7 @@ bool is_routable(std::vector<std::string> tokens) {
 }
 
 bool is_pipeable(std::vector<std::string> tokens) {
-    for (int i = 0; i < tokens.size(); i++) {
+    for (unsigned int i = 0; i < tokens.size(); i++) {
         if (tokens[i] == "|")
             return true;
     }
