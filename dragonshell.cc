@@ -65,11 +65,10 @@ char *strConvert(std::string str) {
 
 char **strVecConvert(std::vector<std::string> strings) {
     std::vector<char*> cstrings;   
-    cstrings.reserve(strings.size());
+    cstrings.reserve(strings.size() - 1);
 
     for (int i = 0; i < strings.size(); i++) {
-        std::string s = strings[i];
-        cstrings.push_back(&s[0]);
+        cstrings.push_back(&strings[i][0]);
     }
     cstrings.push_back(nullptr);
 
@@ -190,22 +189,19 @@ int run(std::vector<std::string> tokens, int fd[2], bool change_write, bool chan
             close(fd[1]);
             dup2(fd[0], STDIN_FILENO);
         }
-        return execv(program_path.c_str(), strVecConvert(tokens));
+        
+        extern char **environ;
+        int status = execve(program_path.c_str(), strVecConvert(tokens), environ);
     } else {
         if (change_write) 
             close(fd[1]);
         if (change_read)
             close(fd[0]);
 
-        if (!should_wait) return 0;
-        int *status = (int *) malloc(sizeof(int));
-        while (1) {
-            int terminated_pid = wait(status);
-            std::cout << "this pid: " << terminated_pid << " just got terminated yeeea, the other pid is: " << pid << std::endl;
-            if (terminated_pid == pid) 
-                break;
+        if (should_wait) {
+            int status = 0;
+            while(wait(&status) != pid) {}
         }
-        free(status);
     }
     return 0;
 }
@@ -298,6 +294,7 @@ int route(std::vector<std::string> tokens)  {
     } else if (tokens.size() < 1) {
         return errorCommand(tokens, "no command");
     } else {
+        std::cout << "huh" << std::endl;
         return run(tokens, nullptr, false, false, true);
     }
     return 0;
