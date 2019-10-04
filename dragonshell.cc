@@ -8,7 +8,7 @@
 #include <locale>
 #include <fcntl.h>
 
-const std::string CD_USAGE_MSG = "DragonShell: expected argument to \"cd\".";
+const std::string CD_USAGE_MSG = "dragonshell: expected argument to \"cd\".";
 const std::string PWD_USAGE_MSG = "usage: pwd";
 const std::string A2PATH_USAGE_MSG = "usage: a2path <path>";
 
@@ -95,26 +95,19 @@ std::vector<std::vector<std::string> > split_tokens_on_token(std::vector<std::st
     return res;
 }
 
-void pprint_vec(std::vector<std::string> strings) {
-    using namespace std;
-
-    cout << "{ ";
-    for (int i = 0; i < strings.size(); i++) {
-        std::string _str = strings[i];
-        cout << _str << ", ";
-    }
-    cout << " }" << endl;
-}
-
 /**
- * using the path variables to see if there is
- * is a file with the partial path
- * returns null if there is no path and also prints the error
+ * using the path variables to see if there's a file with the partial path
+ * returns null if there is no file in any path
  */
 std::string get_path(std::string partial_path) {
     for (int i = 0; i < path_vars.size(); i++) {
         std::string path_var = path_vars[i];
         std::string tmp_path = path_var + partial_path;
+
+        if (path_var.length() > 1 && path_var.at(path_var.length()-1) != '/') {
+            tmp_path = path_var + "/" + partial_path;
+        }
+        
         if (access(strConvert(tmp_path), F_OK) == 0) {
             return tmp_path;
         }
@@ -122,9 +115,6 @@ std::string get_path(std::string partial_path) {
     return "";
 }
 
-/**
- * if the first token of the command is not recognized
- */
 int errorCommand(std::vector<std::string> tokens, std::string error_msg) {
     std::cout << error_msg << std::endl;
     return -1;
@@ -132,11 +122,11 @@ int errorCommand(std::vector<std::string> tokens, std::string error_msg) {
 
 int cd(std::vector<std::string> tokens) {
     if (tokens.size() != 2) {
-        return errorCommand(tokens, CD_USAGE_MSG);
+        std::cout << CD_USAGE_MSG << std::endl;
     } else {
         int status = chdir(tokens[1].c_str());
         if (status != 0) {
-            std::cout << "Could not change directories, path does not exist or no permission" << std::endl;
+            perror("dragonshell");
         }
     }
     return 0;
@@ -153,27 +143,48 @@ std::string get_pwd_string() {
 
 int pwd(std::vector<std::string> tokens) {
     if (tokens.size() != 1) {
-        return errorCommand(tokens, PWD_USAGE_MSG);
+        std::cout << PWD_USAGE_MSG << std::endl;
     } else {
         std::cout << get_pwd_string() << std::endl;
+    }
+    return 0;
+}
+
+int a2path(std::vector<std::string> tokens) {
+    using namespace std;
+    if (tokens.size() != 2) {
+        cout << "dragonshell: " << A2PATH_USAGE_MSG << endl;
+        return -1;
+    } else {
+        string path_string = tokens[1];
+        vector<string> path_tokens = tokenize(path_string, ":");
+        if (path_tokens.size() < 2) {
+            cout << "dragonshell: no paths provided" << endl;
+        } else if (trim(path_tokens[0]) != "$PATH") {
+            cout << "dragonshell: " << path_tokens[0] << " is not the path" << endl;
+        } else {
+            for (int i = 1; i < path_tokens.size(); i++) {
+                path_vars.push_back(path_tokens[i]);
+            }
+        }
         return 0;
     }
 }
 
-int a2path(std::vector<std::string> tokens) {
-    if (tokens.size() != 2) {
-        return errorCommand(tokens, A2PATH_USAGE_MSG);
-    } else {
-        path_vars.push_back(tokens[1]);
-        return 0;
+int print_path() {
+    // start at 1 because first element of path_vars is empty string
+    for (int i = 1; i < path_vars.size()-1; i++) {
+        std::cout << path_vars[i] << ":";
     }
+    std::cout << path_vars[path_vars.size()-1] << std::endl;
+    return 0;
 }
 
 int run(std::vector<std::string> tokens, int fd[2], bool change_write, bool change_read, bool should_wait) {
     // step 1: find which program to run using path/pwd
     std::string program_path = get_path(tokens[0]);
     if (program_path == "") {
-        return errorCommand(tokens, "File does not exist");
+        perror("dragonshell");
     }
 
     // step 2: run it
@@ -189,28 +200,40 @@ int run(std::vector<std::string> tokens, int fd[2], bool change_write, bool chan
             close(fd[1]);
             dup2(fd[0], STDIN_FILENO);
         }
-        
         extern char **environ;
-        int status = execve(program_path.c_str(), strVecConvert(tokens), environ);
+        execve(program_path.c_str(), strVecConvert(tokens), environ);
     } else {
         if (change_write) 
             close(fd[1]);
         if (change_read)
             close(fd[0]);
-
         if (should_wait) {
             int status = 0;
             while(wait(&status) != pid) {}
+        } else {
+            child_processes.push_back(pid);
+            std::cout << "PID " << pid << " is running in the background" << std::endl;
         }
     }
     return 0;
 }
 
+int run_background_task(std::vector<std::string> tokens, int fd[2]) {
+    return run(tokens, fd, true, false, false);
+}
+
+int run_left_pipe(std::vector<std::string> tokens, int fd[2]) {
+    return run(tokens, fd, true, false, true);
+}
+
+int run_right_pipe(std::vector<std::string> tokens, int fd[2]) {
+    return run(tokens, fd, false, true, true);
+}
+
 int run_redirect_to_file(std::vector<std::string> tokens, int fd[2], std::string filename) {
     std::string program_path = get_path(tokens[0]);
     if (program_path == "") {
-        return errorCommand(tokens, 
-            "Either no access or file doesn't exist (fix this Amir, say which one)");
+        perror("dragonshell: program not found");
     }
 
     int pid = fork();
@@ -223,14 +246,13 @@ int run_redirect_to_file(std::vector<std::string> tokens, int fd[2], std::string
     } else {
         close(fd[1]);
         dup(fd[0]);
-        int *status = (int *) malloc(sizeof(int));
 
         int BUFFER_SIZE = 0x10000;
         char buffer[BUFFER_SIZE];
 
-        int file = open((get_pwd_string() + filename).c_str(), O_CREAT | O_WRONLY | O_APPEND, 0644);
+        int file = open((get_pwd_string() + filename).c_str(), O_CREAT | O_WRONLY, 0644);
         if (file < 0) {
-            std::cout << "open on " << get_pwd_string() + filename << " didn't work, returned: " << strerror(errno) << std::endl;
+            perror("dragonshell");
         }
 
         while (read(fd[1], buffer, BUFFER_SIZE) != 0) {
@@ -239,14 +261,6 @@ int run_redirect_to_file(std::vector<std::string> tokens, int fd[2], std::string
                 write(file, buffer+i, sizeof(char));
             }
         } 
-        
-        while (1) {
-            int terminated_pid = wait(status);
-            if (terminated_pid == pid)
-                break;
-        }
-        free(status);
-        return 0;
     }
     return 0;
 }
@@ -282,24 +296,6 @@ bool is_pipeable(std::vector<std::string> tokens) {
     return false;
 }
 
-int route(std::vector<std::string> tokens)  {
-	std::string command_name = tokens[0];
-
-    if (command_name == "cd") {
-        return cd(tokens);
-    } else if (command_name == "pwd") {
-        return pwd(tokens);
-    } else if (command_name == "a2path") {
-        return a2path(tokens);
-    } else if (tokens.size() < 1) {
-        return errorCommand(tokens, "no command");
-    } else {
-        std::cout << "huh" << std::endl;
-        return run(tokens, nullptr, false, false, true);
-    }
-    return 0;
-}
-
 int route_with_piping(std::vector<std::string> pipeable) {
     std::vector<std::string> left, right;
     std::vector<std::vector<std::string> > left_and_right = split_tokens_on_token(pipeable, "|");
@@ -310,10 +306,7 @@ int route_with_piping(std::vector<std::string> pipeable) {
     int fd[2];
     pipe(fd);
 
-    if (run(left, fd, true, false, true) < 0) {
-        perror("something went wrong running the command");
-    }
-    if (run(right, fd, false, true, true) < 0) {
+    if (run_left_pipe(left, fd) < 0 || run_right_pipe(right, fd) < 0) {
         perror("something went wrong running the command");
     }
 
@@ -337,41 +330,57 @@ int route_background_task(std::vector<std::string> background_task) {
     background_task.pop_back();
 
     int fd[2];
-    int devnull = open("/dev/null", O_WRONLY, 0644);
-    if (devnull < 0) {
-        perror("can't open devnull");
-    }
-    fd[1] = devnull;
+    int dev_null = open("/dev/null", O_WRONLY, 0644);
 
-    return run(background_task, fd, true, false, false);
+    if (dev_null < 0)
+        perror("can't open devnull");
+    fd[1] = dev_null;
+
+    return run_background_task(background_task, fd);
+}
+
+int route(std::vector<std::string> tokens)  {
+    if (tokens.size() < 1)
+        std::cout << "Error, no command provided" << std::endl;
+	std::string command_name = tokens[0];
+
+    // main routing
+    if (tokens.size() == 1 && trim(tokens[0]) == "exit") {
+        ds_exit();
+        return 0;
+    } else if (is_background_task(tokens)) {
+        return route_background_task(tokens);
+    } else if (is_routable(tokens)) {
+        return route_with_redirect(tokens);
+    } else if (is_pipeable(tokens)) {
+        return route_with_piping(tokens);
+    } else if (command_name == "cd") {
+        return cd(tokens);
+    } else if (command_name == "$PATH") {
+        return print_path();
+    } else if (command_name == "pwd") {
+        return pwd(tokens);
+    } else if (command_name == "a2path") {
+        return a2path(tokens);
+    } else {
+        return run(tokens, nullptr, false, false, true);
+    }
+    return 0;
 }
 
 void start() {
     while (true) {
-		std::string input;
 		std::cout << "DragonShell > ";
-
-		if (!std::getline(std::cin, input)) {
+		std::string input;
+		if (!std::getline(std::cin, input))
             ds_exit();
-        }
 
         std::vector<std::string> commands = tokenize(input, ";");
-
         for (std::vector<std::string>::iterator command = commands.begin(); command != commands.end(); command++) {
             trim(*command);
             std::vector<std::string> tokens = tokenize(*command, " ");
-            
-            int status;
-            if (is_background_task(tokens)) {
-                status = route_background_task(tokens);
-            } else if (is_routable(tokens)) {
-                status = route_with_redirect(tokens);
-            } else if (is_pipeable(tokens)) {
-                status = route_with_piping(tokens);
-            } else {
-                status = route(tokens);
-            } if (status < 0) {
-                std::cout << "Status code: " << status << " something happened" << std::endl;
+            if (route(tokens) < 0) {
+                // something went wrong, just continue
             }
         }
 	}
@@ -386,18 +395,17 @@ void init_signals() {
     sigemptyset(&sa.sa_mask);
 
     sa.sa_handler = SIG_IGN;
-    sigaction(SIGINT, &sa, nullptr);
     sigaction(SIGTSTP, &sa, nullptr);
+    sigaction(SIGINT, &sa, nullptr);
 }
 
 void init_path() {
+    path_vars.push_back("");
     path_vars.push_back("/bin/");
     path_vars.push_back("/usr/bin/");
-    path_vars.push_back("");
 }
 
 int main(int argc, char **argv) {
-
     std::cout << " ~ DragonShell ~" << std::endl;
 
     // push starting path variables
