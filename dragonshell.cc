@@ -7,6 +7,8 @@
 #include <signal.h>
 #include <locale>
 #include <fcntl.h>
+#include <sys/wait.h>
+#include <cerrno>
 
 const std::string CD_USAGE_MSG = "dragonshell: expected argument to \"cd\".";
 const std::string PWD_USAGE_MSG = "usage: pwd";
@@ -14,6 +16,8 @@ const std::string A2PATH_USAGE_MSG = "usage: a2path <path>";
 
 std::vector<std::string> path_vars;
 std::vector<int> child_processes;
+
+#define perror std::perror
 
 struct sigaction sa;
 
@@ -70,7 +74,7 @@ char **strVecConvert(std::vector<std::string> strings) {
     for (int i = 0; i < strings.size(); i++) {
         cstrings.push_back(&strings[i][0]);
     }
-    cstrings.push_back(nullptr);
+    cstrings.push_back(NULL);
 
     return cstrings.data();
 }
@@ -270,7 +274,7 @@ int ds_exit() {
     for (int i = 0; i < child_processes.size(); i++) {
         kill(child_processes[i], SIGKILL);
     }
-    exit(0);
+    _exit(0);
 }
 
 bool is_background_task(std::vector<std::string> tokens) {
@@ -363,7 +367,7 @@ int route(std::vector<std::string> tokens)  {
     } else if (command_name == "a2path") {
         return a2path(tokens);
     } else {
-        return run(tokens, nullptr, false, false, true);
+        return run(tokens, NULL, false, false, true);
     }
     return 0;
 }
@@ -395,8 +399,8 @@ void init_signals() {
     sigemptyset(&sa.sa_mask);
 
     sa.sa_handler = SIG_IGN;
-    sigaction(SIGTSTP, &sa, nullptr);
-    sigaction(SIGINT, &sa, nullptr);
+    sigaction(SIGTSTP, &sa, NULL);
+    sigaction(SIGINT, &sa, NULL);
 }
 
 void init_path() {
